@@ -71,7 +71,8 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS postos (
                 id SERIAL PRIMARY KEY,
                 nome_posto TEXT NOT NULL UNIQUE,
-                cidade TEXT
+                cidade TEXT,
+                active INTEGER NOT NULL DEFAULT 1
             )
             """
         )
@@ -731,7 +732,7 @@ def login():
 def selecionar_posto():
     """Tela simples antes do formulário para definir qual unidade está sendo lançada."""
     conn = get_db_connection()
-    postos = conn.execute('SELECT * FROM postos ORDER BY nome_posto').fetchall()
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
     conn.close()
 
     if request.method == 'POST':
@@ -1427,7 +1428,7 @@ def estoque_adm():
         (selected_posto_id,),
     ).fetchall()
     tanques_status = get_tanques_status(conn, selected_posto_id, alerta_pct=0.20)
-    postos = conn.execute('SELECT * FROM postos ORDER BY nome_posto').fetchall()
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
     conn.close()
 
     return render_template('estoque_gerencial.html', tanques=tanques, tanques_status=tanques_status, postos=postos, posto_id=selected_posto_id, user=u)
@@ -1508,7 +1509,7 @@ def combustiveis_nf():
     except Exception:
         itens_alerta = []
 
-    postos = conn.execute('SELECT * FROM postos ORDER BY nome_posto').fetchall()
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
     conn.close()
 
     return render_template(
@@ -1578,7 +1579,7 @@ def despesas():
         (f'{mes}%', selected_posto_id),
     ).fetchall()
 
-    postos = conn.execute('SELECT * FROM postos ORDER BY nome_posto').fetchall()
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
     conn.close()
 
     return render_template(
@@ -1674,7 +1675,7 @@ def itens():
 
     itens = conn.execute('SELECT * FROM itens_estoque WHERE posto_id = ? AND active = 1 ORDER BY categoria, nome', (selected_posto_id,)).fetchall()
     alerts = conn.execute('SELECT * FROM itens_estoque WHERE posto_id = ? AND active = 1 AND quantidade <= estoque_min ORDER BY (estoque_min - quantidade) DESC', (selected_posto_id,)).fetchall()
-    postos = conn.execute('SELECT * FROM postos ORDER BY nome_posto').fetchall()
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
     conn.close()
 
     return render_template('itens.html', user=u, postos=postos, posto_id=selected_posto_id, itens=itens, alerts=alerts, hoje=datetime.now().strftime('%Y-%m-%d'))
@@ -1749,7 +1750,7 @@ def transferencias():
         conn.close()
         return redirect(url_for('transferencias'))
 
-    postos = conn.execute('SELECT * FROM postos ORDER BY nome_posto').fetchall()
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
     combustiveis = conn.execute('SELECT DISTINCT combustivel as nome FROM estoque ORDER BY combustivel').fetchall()
     itens_distintos = conn.execute('SELECT DISTINCT nome FROM itens_estoque WHERE active = 1 ORDER BY nome').fetchall()
     historico = conn.execute(
@@ -1771,17 +1772,39 @@ def equipe():
 
     conn = get_db_connection()
     if request.method == 'POST':
-        conn.execute(
-            'INSERT INTO colaboradores (posto_id, nome, cargo) VALUES (?,?,?)',
-            (selected_posto_id, request.form.get('nome'), request.form.get('cargo')),
-        )
-        conn.commit()
+        action = request.form.get('action') or 'create'
+        colab_id = request.form.get('colaborador_id')
+        nome = (request.form.get('nome') or '').strip()
+        cargo = (request.form.get('cargo') or '').strip()
+
+        if action == 'create' and nome:
+            conn.execute(
+                'INSERT INTO colaboradores (posto_id, nome, cargo) VALUES (?,?,?)',
+                (selected_posto_id, nome, cargo),
+            )
+            conn.commit()
+        elif action == 'update' and colab_id and nome:
+            conn.execute(
+                'UPDATE colaboradores SET nome = ?, cargo = ? WHERE id = ? AND posto_id = ?',
+                (nome, cargo, colab_id, selected_posto_id),
+            )
+            conn.commit()
+        elif action == 'delete' and colab_id:
+            conn.execute(
+                'UPDATE colaboradores SET active = 0 WHERE id = ? AND posto_id = ?',
+                (colab_id, selected_posto_id),
+            )
+            conn.commit()
+
+        # Redirect to avoid form resubmission on refresh
+        conn.close()
+        return redirect(url_for('equipe', posto_id=selected_posto_id))
 
     colabs = conn.execute(
         'SELECT * FROM colaboradores WHERE posto_id = ? AND active = 1 ORDER BY nome',
         (selected_posto_id,),
     ).fetchall()
-    postos = conn.execute('SELECT * FROM postos ORDER BY nome_posto').fetchall()
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
     conn.close()
 
     return render_template('equipe.html', colaboradores=colabs, postos=postos, posto_id=selected_posto_id, user=u)
@@ -1797,12 +1820,24 @@ def equipe():
 def postos():
     conn = get_db_connection()
     if request.method == 'POST':
+        action = request.form.get('action') or 'create'
+        posto_id_form = request.form.get('posto_id')
         nome = (request.form.get('nome_posto') or '').strip()
         cidade = (request.form.get('cidade') or '').strip()
-        if nome:
+
+        if action == 'create' and nome:
             conn.execute('INSERT INTO postos (nome_posto, cidade) VALUES (?, ?)', (nome, cidade))
             conn.commit()
-    lista = conn.execute('SELECT * FROM postos ORDER BY nome_posto').fetchall()
+        elif action == 'update' and posto_id_form and nome:
+            conn.execute('UPDATE postos SET nome_posto = ?, cidade = ? WHERE id = ?', (nome, cidade, posto_id_form))
+            conn.commit()
+        elif action == 'delete' and posto_id_form:
+            conn.execute('UPDATE postos SET active = 0 WHERE id = ?', (posto_id_form,))
+            conn.commit()
+            
+        return redirect(url_for('postos'))
+
+    lista = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
     conn.close()
     return render_template('postos.html', postos=lista, user=current_user())
 
