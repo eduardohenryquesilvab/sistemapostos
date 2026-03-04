@@ -76,6 +76,12 @@ def init_db() -> None:
             )
             """
         )
+        try:
+            cur.execute("SAVEPOINT sp_postos_active")
+            cur.execute("ALTER TABLE postos ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+            cur.execute("RELEASE SAVEPOINT sp_postos_active")
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT sp_postos_active")
         # Usuários
         cur.execute(
             """
@@ -294,7 +300,8 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS postos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome_posto TEXT NOT NULL UNIQUE,
-            cidade TEXT
+            cidade TEXT,
+            active INTEGER NOT NULL DEFAULT 1
         )
         """
     )
@@ -518,6 +525,11 @@ def init_db() -> None:
         ]:
             if col not in venda_cols:
                 cur.execute(f'ALTER TABLE vendas ADD COLUMN {col} {ddl}')
+
+    if table_exists('postos'):
+        postos_cols = set(colnames('postos'))
+        if 'active' not in postos_cols:
+            cur.execute('ALTER TABLE postos ADD COLUMN active INTEGER NOT NULL DEFAULT 1')
 
     # Seeds: combustíveis por posto
     combustiveis_padrao = [
