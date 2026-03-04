@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EC Manager V1.0 — Lançamento de Turno</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="public-bg">
+  <div class="public-shell">
+    <div class="public-brand">
+      <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo EC" class="public-logo">
+      <div class="public-brand-text">
+        <div class="public-title">EC Manager</div>
+        <div class="public-subtitle">V1.0 • Lançamento de Turno</div>
+      </div>
+      <a class="link-muted" href="/trocar-posto" title="Trocar unidade"><i class="fa-solid fa-rotate"></i> Trocar posto</a>
+    </div>
+
+    <div class="public-card">
+      <div class="chip">
+        <i class="fa-solid fa-location-dot"></i>
+        <span><strong>Unidade:</strong> {{ posto.nome_posto }}</span>
+      </div>
+
+      <form action="/salvar" method="POST" class="form-grid">
+        <input type="hidden" name="posto_id" value="{{ posto_id }}">
+
+        <div class="grid-2">
+          <div>
+            <label>Data</label>
+            <input type="date" name="data_dia" value="{{ data_hoje }}" required>
+          </div>
+          <div>
+            <label>Turno</label>
+            <select name="turno">
+              <option>Manhã</option>
+              <option>Tarde</option>
+              <option>Noite</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label>Frentista</label>
+          <select name="colaborador" required>
+            {% for c in colaboradores %}
+              <option value="{{ c.nome }}">{{ c.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="section-title"><i class="fa-solid fa-wallet"></i> Recebimentos (R$)</div>
+        <div class="grid-2">
+          <input type="number" step="0.01" name="valor_dinheiro" placeholder="Dinheiro">
+          <input type="number" step="0.01" name="valor_pix" placeholder="PIX">
+        </div>
+        <div class="grid-2">
+          <input type="number" step="0.01" name="valor_debito" placeholder="Débito">
+          <input type="number" step="0.01" name="valor_credito" placeholder="Crédito">
+        </div>
+
+        <div class="section-title"><i class="fa-solid fa-gas-pump"></i> Combustível (Litros vendidos)</div>
+        <div class="grid-2">
+          <input type="number" step="0.01" name="litros_gas" placeholder="Gasolina Comum (L)">
+          <input type="number" step="0.01" name="preco_gas" placeholder="Preço Gasolina (R$/L)">
+        </div>
+        <div class="grid-2">
+          <input type="number" step="0.01" name="litros_alcool" placeholder="Álcool (L)">
+          <input type="number" step="0.01" name="preco_alcool" placeholder="Preço Álcool (R$/L)">
+        </div>
+        <div class="grid-2">
+          <input type="number" step="0.01" name="litros_diesel_s500" placeholder="Diesel S500 (L)">
+          <input type="number" step="0.01" name="preco_diesel_s500" placeholder="Preço Diesel S500 (R$/L)">
+        </div>
+        <div class="grid-2">
+          <input type="number" step="0.01" name="litros_diesel_s10" placeholder="Diesel S10 (L)">
+          <input type="number" step="0.01" name="preco_diesel_s10" placeholder="Preço Diesel S10 (R$/L)">
+        </div>
+
+        <div class="section-title"><i class="fa-solid fa-box"></i> Outros produtos</div>
+        <div class="grid-2">
+          <input type="number" name="qtd_gas" placeholder="Qtd Gás">
+          <input type="number" name="qtd_agua" placeholder="Qtd Água">
+        </div>
+        <input type="number" step="0.01" name="valor_produtos" placeholder="Total outros produtos (Lubrificantes, etc) R$">
+
+        <div>
+          <label>Notas/Observações</label>
+          <textarea name="notas" rows="2" placeholder="Ocorrências no turno..."></textarea>
+        </div>
+
+        <button type="submit" class="btn primary lg"><i class="fa-solid fa-paper-plane"></i> Enviar fechamento</button>
+
+        <div class="public-footer">
+          <a href="/login" class="link-muted"><i class="fa-solid fa-lock"></i> Área Gerencial</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

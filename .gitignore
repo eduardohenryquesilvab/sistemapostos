@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+posto.db
+.env
+.venv
+venv/
+venv*/

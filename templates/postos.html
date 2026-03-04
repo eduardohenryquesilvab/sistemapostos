@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EC Manager V1.0</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    :root { --main:#0B4DB3; --accent:#F7B500; --bg:#F5F7FB; --dark:#0F172A; --danger:#EF4444; }
+    body{margin:0;font-family:'Segoe UI',sans-serif;background:var(--bg);display:flex}
+    .sidebar{width:260px;background:var(--dark);height:100vh;position:fixed;color:#fff;display:flex;flex-direction:column}
+    .sidebar-brand{padding:28px 20px;font-weight:900;color:var(--main);text-align:center;border-bottom:1px solid #37474f}
+    .sidebar-item{padding:15px 22px;display:flex;gap:12px;align-items:center;color:#cfd8dc;text-decoration:none;border-bottom:1px solid #37474f}
+    .sidebar-item:hover{background:#37474f;color:var(--main)}
+    .active{background:#37474f;color:var(--main)!important;border-left:4px solid var(--main)}
+    .content{margin-left:260px;padding:28px;width:calc(100% - 260px)}
+    .card{background:#fff;border-radius:14px;padding:16px;box-shadow:0 4px 12px rgba(0,0,0,0.05);margin-bottom:14px}
+    h2{margin:0 0 10px 0;color:#263238}
+    .form-row{display:grid;grid-template-columns:2fr 2fr 1fr;gap:12px;align-items:end}
+    input{width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;box-sizing:border-box}
+    button{padding:12px;border:none;border-radius:10px;background:var(--main);color:#fff;font-weight:900;cursor:pointer}
+    table{width:100%;border-collapse:collapse}
+    th{background:#f8f9fa;color:#78909c;font-size:11px;text-transform:uppercase;border-bottom:2px solid #edf2f7;padding:12px;text-align:left}
+    td{border-bottom:1px solid #f1f5f9;padding:12px;font-size:14px;color:#444}
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-wrap">
+        <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo">
+        <div>
+          <div class="brand-title">EC Manager</div>
+          <div class="brand-sub">V1.0</div>
+        </div>
+      </div>
+    </div>
+    <a href="/gerencial" class="sidebar-item"><i class="fas fa-chart-line"></i> Dashboard</a>
+    <a href="/gerencial/postos" class="sidebar-item active"><i class="fas fa-map-marked-alt"></i> Unidades</a>
+    <a href="/gerencial/usuarios" class="sidebar-item"><i class="fas fa-user-shield"></i> Usuários</a>
+    <div style="margin-top:auto;">
+      <a href="/logout" class="sidebar-item" style="color:var(--danger);border-top:1px solid #37474f;border-bottom:none"><i class="fas fa-sign-out-alt"></i> Sair</a>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="card">
+      <h2>Unidades (Postos)</h2>
+      <form method="POST">
+        <div class="form-row">
+          <div>
+            <label style="display:block;color:#546e7a;font-size:13px;font-weight:700;margin-bottom:6px">Nome da Unidade</label>
+            <input name="nome_posto" placeholder="Ex: Posto Centro" required />
+          </div>
+          <div>
+            <label style="display:block;color:#546e7a;font-size:13px;font-weight:700;margin-bottom:6px">Cidade</label>
+            <input name="cidade" placeholder="Ex: Imperatriz" />
+          </div>
+          <button type="submit">Adicionar</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-bottom:12px">Lista de Unidades</h2>
+      <table class="table">
+        <thead>
+          <tr><th>ID</th><th>Nome</th><th>Cidade</th></tr>
+        </thead>
+        <tbody>
+          {% for p in postos %}
+          <tr><td><b>{{ p.id }}</b></td><td>{{ p.nome_posto }}</td><td>{{ p.cidade }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

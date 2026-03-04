@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EC Manager V1.0 — Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="public-bg">
+  <div class="public-shell">
+    <div class="public-brand">
+      <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo EC" class="public-logo">
+      <div class="public-brand-text">
+        <div class="public-title">EC Manager</div>
+        <div class="public-subtitle">V1.0 • Área Gerencial</div>
+      </div>
+      <a class="link-muted" href="/"><i class="fa-solid fa-house"></i> Início</a>
+    </div>
+
+    <div class="public-card">
+      <form method="POST" class="form-grid">
+        <div class="section-title"><i class="fa-solid fa-user-lock"></i> Acesso</div>
+
+        {% if erro %}
+          <div style="padding:12px;border-radius:12px;border:1px solid rgba(239,68,68,.25);background:rgba(239,68,68,.08);color:#991B1B;font-weight:700">
+            {{ erro }}
+          </div>
+        {% endif %}
+
+        <div>
+          <label>Usuário</label>
+          <input type="text" name="username" placeholder="Digite seu usuário" autofocus required>
+        </div>
+
+        <div>
+          <label>Senha</label>
+          <input type="password" name="senha" placeholder="Digite sua senha" required>
+        </div>
+
+        <button type="submit" class="btn primary lg"><i class="fa-solid fa-right-to-bracket"></i> Entrar</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

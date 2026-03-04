@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EC Manager V1.0 — Selecionar Unidade</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="public-bg">
+  <div class="public-shell">
+    <div class="public-brand">
+      <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo EC" class="public-logo">
+      <div class="public-brand-text">
+        <div class="public-title">EC Manager</div>
+        <div class="public-subtitle">V1.0 • Selecione a Unidade</div>
+      </div>
+    </div>
+
+    <div class="public-card">
+      <form method="POST" class="form-grid">
+        <div class="section-title"><i class="fa-solid fa-store"></i> Unidade</div>
+        <select name="posto_id" required>
+          <option value="" disabled selected>Escolha o posto...</option>
+          {% for p in postos %}
+            <option value="{{ p.id }}">{{ p.nome_posto }}{% if p.cidade %} — {{ p.cidade }}{% endif %}</option>
+          {% endfor %}
+        </select>
+
+        <button type="submit" class="btn primary lg"><i class="fa-solid fa-arrow-right"></i> Continuar</button>
+
+        <div class="public-footer">
+          <a href="/login" class="link-muted"><i class="fa-solid fa-lock"></i> Área Gerencial</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
