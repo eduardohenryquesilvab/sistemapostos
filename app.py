@@ -264,23 +264,21 @@ def init_db() -> None:
                 (DEFAULT_OWNER_USER, generate_password_hash(DEFAULT_OWNER_PASS), "owner", None, datetime.now().isoformat()),
             )
 
-        # Seed tanques padrão por posto (se vazio)
-        cur.execute("SELECT 1 FROM estoque LIMIT 1")
-        if not cur.fetchone():
-            cur.execute("SELECT id FROM postos ORDER BY id")
-            postos = cur.fetchall()
-            for p in postos:
-                pid = p["id"] if isinstance(p, dict) else p[0]
-                for comb, litros, cap in [
-                    ("Gasolina Comum", 5000, 15000),
-                    ("Álcool", 2000, 10000),
-                    ("Diesel S500", 3000, 15000),
-                    ("Diesel S10", 4000, 15000),
-                ]:
-                    cur.execute(
-                        "INSERT INTO estoque (posto_id, combustivel, litros_atuais, capacidade_max) VALUES (%s,%s,%s,%s) ON CONFLICT (posto_id, combustivel) DO NOTHING",
-                        (pid, comb, float(litros), float(cap)),
-                    )
+        # Seed tanques padrão por posto (garante que todo posto tenha os 4 combustíveis)
+        cur.execute("SELECT id FROM postos ORDER BY id")
+        postos_pg = cur.fetchall()
+        for p in postos_pg:
+            pid = p["id"] if isinstance(p, dict) else p[0]
+            for comb, litros, cap in [
+                ("Gasolina Comum", 0, 15000),
+                ("Álcool", 0, 10000),
+                ("Diesel S500", 0, 15000),
+                ("Diesel S10", 0, 15000),
+            ]:
+                cur.execute(
+                    "INSERT INTO estoque (posto_id, combustivel, litros_atuais, capacidade_max) VALUES (%s,%s,%s,%s) ON CONFLICT (posto_id, combustivel) DO NOTHING",
+                    (pid, comb, float(litros), float(cap)),
+                )
 
         conn.commit()
         conn.close()
@@ -1838,7 +1836,31 @@ def postos():
         cidade = (request.form.get('cidade') or '').strip()
 
         if action == 'create' and nome:
-            conn.execute('INSERT INTO postos (nome_posto, cidade) VALUES (?, ?)', (nome, cidade))
+            cur = conn.cursor()
+            cur.execute(
+                'INSERT INTO postos (nome_posto, cidade) VALUES (?, ?)' if not getattr(conn, 'is_pg', False)
+                else 'INSERT INTO postos (nome_posto, cidade) VALUES (%s, %s) RETURNING id',
+                (nome, cidade),
+            )
+            # Obter o id do posto recém-criado
+            if getattr(conn, 'is_pg', False):
+                new_posto_id = cur.fetchone()[0]
+            else:
+                new_posto_id = cur.lastrowid
+            # Seed dos tanques padrão para o novo posto
+            COMBUSTIVEIS_PADRAO = [
+                ('Gasolina Comum', 0, 15000),
+                ('Álcool', 0, 10000),
+                ('Diesel S500', 0, 15000),
+                ('Diesel S10', 0, 15000),
+            ]
+            placeholder = '%s' if getattr(conn, 'is_pg', False) else '?'
+            for comb, litros, cap in COMBUSTIVEIS_PADRAO:
+                conn.execute(
+                    f'INSERT INTO estoque (posto_id, combustivel, litros_atuais, capacidade_max) VALUES ({placeholder},{placeholder},{placeholder},{placeholder}) '
+                    + ('ON CONFLICT (posto_id, combustivel) DO NOTHING' if getattr(conn, 'is_pg', False) else 'OR IGNORE'),
+                    (new_posto_id, comb, float(litros), float(cap)),
+                )
             conn.commit()
         elif action == 'update' and posto_id_form and nome:
             conn.execute('UPDATE postos SET nome_posto = ?, cidade = ? WHERE id = ?', (nome, cidade, posto_id_form))
