@@ -70,6 +70,25 @@
             {% endif %}
         </div>
 
+        {% set alert_tanques = [] %}
+        {% for t in tanques_status %}{% if t.alerta %}{% set _ = alert_tanques.append(t) %}{% endif %}{% endfor %}
+
+        {% if (alert_tanques|length) > 0 %}
+        <div style="background:#fff;border-radius:14px;padding:16px;box-shadow:0 4px 12px rgba(0,0,0,0.05);border-left:6px solid var(--danger);margin-bottom:20px;">
+            <div style="color:var(--danger);font-weight:900;font-size:14px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">
+                <i class="fas fa-triangle-exclamation"></i> Alerta — Tanques abaixo de 20%
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                {% for t in alert_tanques %}
+                <span style="background:#fff;border:1px solid rgba(239,68,68,.25);border-radius:999px;padding:8px 14px;font-weight:800;color:#991B1B;">
+                    {{ t.combustivel }}: {{ '%.0f'|format(t.litros_atuais) }}L / {{ '%.0f'|format(t.capacidade_max) }}L ({{ t.pct }}%)
+                    {% if t.dias_left %} &bull; ~{{ t.dias_left }} dias{% endif %}
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <div class="grid-tanques">
             {% for t in tanques_status %}
             <div class="card-tanque">

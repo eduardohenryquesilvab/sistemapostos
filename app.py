@@ -225,7 +225,7 @@ def init_db() -> None:
                 quantidade DOUBLE PRECISION NOT NULL,
                 custo_unit DOUBLE PRECISION NOT NULL DEFAULT 0,
                 preco_venda DOUBLE PRECISION NOT NULL DEFAULT 0,
-                observacao TEXT,
+                ref TEXT,
                 user_id INTEGER NULL REFERENCES users(id),
                 created_at TEXT NOT NULL
             )
