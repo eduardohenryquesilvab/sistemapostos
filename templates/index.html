@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
+
 <body class="public-bg">
   <div class="public-shell">
     <div class="public-brand">
@@ -15,7 +17,8 @@
         <div class="public-title">EC Manager</div>
         <div class="public-subtitle">V1.0 • Lançamento de Turno</div>
       </div>
-      <a class="link-muted" href="/trocar-posto" title="Trocar unidade"><i class="fa-solid fa-rotate"></i> Trocar posto</a>
+      <a class="link-muted" href="/trocar-posto" title="Trocar unidade"><i class="fa-solid fa-rotate"></i> Trocar
+        posto</a>
     </div>
 
     <div class="public-card">
@@ -46,7 +49,7 @@
           <label>Frentista</label>
           <select name="colaborador" required>
             {% for c in colaboradores %}
-              <option value="{{ c.nome }}">{{ c.nome }}</option>
+            <option value="{{ c.nome }}">{{ c.nome }}</option>
             {% endfor %}
           </select>
         </div>
@@ -62,29 +65,21 @@
         </div>
 
         <div class="section-title"><i class="fa-solid fa-gas-pump"></i> Combustível (Litros vendidos)</div>
+        {% for c in combustiveis %}
         <div class="grid-2">
-          <input type="number" step="0.01" name="litros_gas" placeholder="Gasolina Comum (L)">
-          <input type="number" step="0.01" name="preco_gas" placeholder="Preço Gasolina (R$/L)">
+          <input type="number" step="0.01" name="litros_dyn_{{ c.combustivel }}" placeholder="{{ c.combustivel }} (L)">
+          <input type="number" step="0.01" name="preco_dyn_{{ c.combustivel }}"
+            placeholder="Preço {{ c.combustivel }} (R$/L)">
         </div>
-        <div class="grid-2">
-          <input type="number" step="0.01" name="litros_alcool" placeholder="Álcool (L)">
-          <input type="number" step="0.01" name="preco_alcool" placeholder="Preço Álcool (R$/L)">
-        </div>
-        <div class="grid-2">
-          <input type="number" step="0.01" name="litros_diesel_s500" placeholder="Diesel S500 (L)">
-          <input type="number" step="0.01" name="preco_diesel_s500" placeholder="Preço Diesel S500 (R$/L)">
-        </div>
-        <div class="grid-2">
-          <input type="number" step="0.01" name="litros_diesel_s10" placeholder="Diesel S10 (L)">
-          <input type="number" step="0.01" name="preco_diesel_s10" placeholder="Preço Diesel S10 (R$/L)">
-        </div>
+        {% endfor %}
 
         <div class="section-title"><i class="fa-solid fa-box"></i> Outros produtos</div>
         <div class="grid-2">
           <input type="number" name="qtd_gas" placeholder="Qtd Gás">
           <input type="number" name="qtd_agua" placeholder="Qtd Água">
         </div>
-        <input type="number" step="0.01" name="valor_produtos" placeholder="Total outros produtos (Lubrificantes, etc) R$">
+        <input type="number" step="0.01" name="valor_produtos"
+          placeholder="Total outros produtos (Lubrificantes, etc) R$">
 
         <div>
           <label>Notas/Observações</label>
@@ -100,4 +95,5 @@
     </div>
   </div>
 </body>
+
 </html>

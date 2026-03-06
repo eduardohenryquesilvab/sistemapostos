@@ -117,10 +117,17 @@ def init_db() -> None:
                 combustivel TEXT NOT NULL,
                 litros_atuais DOUBLE PRECISION NOT NULL DEFAULT 0,
                 capacidade_max DOUBLE PRECISION NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
                 UNIQUE(posto_id, combustivel)
             )
             """
         )
+        try:
+            cur.execute("SAVEPOINT sp_estoque_active")
+            cur.execute("ALTER TABLE estoque ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+            cur.execute("RELEASE SAVEPOINT sp_estoque_active")
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT sp_estoque_active")
         # Vendas (turno)
         cur.execute(
             """
@@ -366,6 +373,7 @@ def init_db() -> None:
             combustivel TEXT NOT NULL,
             litros_atuais REAL NOT NULL DEFAULT 0,
             capacidade_max REAL NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
             UNIQUE(posto_id, combustivel),
             FOREIGN KEY(posto_id) REFERENCES postos(id)
         )
@@ -528,6 +536,11 @@ def init_db() -> None:
         postos_cols = set(colnames('postos'))
         if 'active' not in postos_cols:
             cur.execute('ALTER TABLE postos ADD COLUMN active INTEGER NOT NULL DEFAULT 1')
+
+    if table_exists('estoque'):
+        estoque_cols = set(colnames('estoque'))
+        if 'active' not in estoque_cols:
+            cur.execute('ALTER TABLE estoque ADD COLUMN active INTEGER NOT NULL DEFAULT 1')
 
     # Seeds: combustíveis por posto
     combustiveis_padrao = [
@@ -771,11 +784,18 @@ def lancamento():
         'SELECT * FROM colaboradores WHERE active = 1 AND posto_id = ? ORDER BY nome',
         (posto_id,),
     ).fetchall()
+    
+    # Busca combustíveis ativos para o posto
+    combustiveis = conn.execute(
+        'SELECT * FROM estoque WHERE posto_id = ? AND active = 1 ORDER BY combustivel',
+        (posto_id,),
+    ).fetchall()
     conn.close()
 
     return render_template(
         'index.html',
         colaboradores=colabs,
+        combustiveis=combustiveis,
         posto=posto,
         posto_id=posto_id,
         data_hoje=datetime.now().strftime('%Y-%m-%d'),
@@ -864,46 +884,42 @@ def salvar():
         ),
     )
 
-    # Baixa automática do estoque por litros
-    def baixa(comb: str, litros: float):
-        if litros and litros > 0:
+    # Baixa automática do estoque por litros (Dinâmico)
+    def baixa_dynamic(comb: str, litros_venda: float, preco_un: float, v_id: int):
+        if litros_venda and litros_venda > 0:
+            # 1. Atualiza estoque físico
             conn.execute(
                 'UPDATE estoque SET litros_atuais = MAX(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?',
-                (litros, posto_id, comb),
+                (litros_venda, posto_id, comb),
+            )
+            # 2. Registra na nova tabela detalhada
+            conn.execute(
+                'INSERT INTO venda_combustiveis (venda_id, combustivel, litros, preco_unitario) VALUES (?,?,?,?)',
+                (v_id, comb, litros_venda, preco_un)
             )
 
-    baixa('Gasolina Comum', litros_gas)
-    baixa('Álcool', litros_alcool)
-    baixa('Diesel S500', litros_diesel_s500)
-    baixa('Diesel S10', litros_diesel_s10)
+    # Identifica campos dinâmicos no form (litros_XXX e preco_XXX)
+    venda_id_atual = conn.execute("SELECT id FROM vendas WHERE posto_id=? ORDER BY id DESC LIMIT 1", (posto_id,)).fetchone()['id']
+    
+    # Para compatibilidade com as colunas fixas antigas (opcional, mas bom manter por enquanto)
+    legacy_map = {
+        'Gasolina Comum': 'litros_gasolina',
+        'Álcool': 'litros_etanol',
+        'Diesel S500': 'litros_diesel_s500',
+        'Diesel S10': 'litros_diesel_s10'
+    }
 
-    # Baixa automática de itens (Gás/Água) se existirem no estoque de itens
-    def baixa_item(nome_item: str, qtd: int):
-        if qtd and qtd > 0:
-            row = conn.execute(
-                'SELECT id, custo_unit, preco_venda FROM itens_estoque WHERE posto_id = ? AND nome = ? AND active = 1',
-                (posto_id, nome_item),
-            ).fetchone()
-            if row:
-                conn.execute(
-                    'UPDATE itens_estoque SET quantidade = MAX(quantidade - ?, 0) WHERE id = ?',
-                    (qtd, row['id']),
-                )
-                conn.execute(
-                    'INSERT INTO itens_mov (data, posto_id, item_id, tipo, quantidade, custo_unit, preco_venda, ref, user_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                    (
-                        d.get('data_dia') or datetime.now().strftime('%Y-%m-%d'),
-                        posto_id,
-                        row['id'],
-                        'saida',
-                        float(qtd),
-                        float(row['custo_unit'] or 0),
-                        float(row['preco_venda'] or 0),
-                        'venda_turno',
-                        None,
-                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    ),
-                )
+    prefix_l = "litros_dyn_"
+    prefix_p = "preco_dyn_"
+
+    for key, value in d.items():
+        if key.startswith(prefix_l):
+            comb_nome = key[len(prefix_l):]
+            litros_v = fnum(value)
+            preco_v = fnum(d.get(f"{prefix_p}{comb_nome}"))
+            
+            if litros_v > 0:
+                baixa_dynamic(comb_nome, litros_v, preco_v, venda_id_atual)
 
     baixa_item('Água', qtd_agua)
     baixa_item('Gás', qtd_gas)
@@ -1411,10 +1427,31 @@ def estoque_adm():
 
     conn = get_db_connection()
     if request.method == 'POST':
+        action = request.form.get('action')
         combustivel = request.form.get('combustivel')
         tipo = request.form.get('tipo_operacao')
-        valor = float(request.form.get('quantidade') or 0)
-        if tipo == 'entrada':
+        valor_str = request.form.get('quantidade') or '0'
+        valor = float(valor_str.replace(',', '.'))
+
+        if action == 'add_fuel':
+            nome_novo = request.form.get('nome_novo', '').strip()
+            cap_nova = float(request.form.get('cap_nova') or 0)
+            if nome_novo:
+                conn.execute(
+                    'INSERT INTO estoque (posto_id, combustivel, litros_atuais, capacidade_max, active) VALUES (?, ?, 0, ?, 1) ' +
+                    ('ON CONFLICT (posto_id, combustivel) DO UPDATE SET active=1' if getattr(conn, 'is_pg', False) else 'OR IGNORE'),
+                    (selected_posto_id, nome_novo, cap_nova)
+                )
+                if not getattr(conn, 'is_pg', False):
+                     conn.execute('UPDATE estoque SET active=1 WHERE posto_id=? AND combustivel=?', (selected_posto_id, nome_novo))
+        elif action == 'rename_fuel':
+            nome_novo = request.form.get('nome_novo', '').strip()
+            if nome_novo and combustivel:
+                conn.execute('UPDATE estoque SET combustivel = ? WHERE posto_id = ? AND combustivel = ?', (nome_novo, selected_posto_id, combustivel))
+        elif action == 'delete_fuel':
+            if combustivel:
+                conn.execute('UPDATE estoque SET active = 0 WHERE posto_id = ? AND combustivel = ?', (selected_posto_id, combustivel))
+        elif tipo == 'entrada':
             conn.execute(
                 'UPDATE estoque SET litros_atuais = litros_atuais + ? WHERE posto_id = ? AND combustivel = ?',
                 (valor, selected_posto_id, combustivel),
@@ -1434,7 +1471,7 @@ def estoque_adm():
         return redirect(url_for('estoque_adm', posto_id=selected_posto_id))
 
     tanques = conn.execute(
-        'SELECT * FROM estoque WHERE posto_id = ? ORDER BY combustivel',
+        'SELECT * FROM estoque WHERE posto_id = ? AND active = 1 ORDER BY combustivel',
         (selected_posto_id,),
     ).fetchall()
     tanques_status = get_tanques_status(conn, selected_posto_id, alerta_pct=0.20)
