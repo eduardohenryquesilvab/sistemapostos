@@ -333,11 +333,19 @@
           '%.2f'|format(total_mes.credito or 0) }}</div>
       </div>
       <div class="kpi">
-        <div class="label">Combustíveis vendidos</div>
-        <div class="value">{{ '%.2f'|format((total_mes.litros_gasolina or 0) + (total_mes.litros_etanol or 0) +
-          (total_mes.litros_diesel_s500 or 0) + (total_mes.litros_diesel_s10 or 0)) }} L</div>
-        <div class="sub">Gas: {{ '%.2f'|format(total_mes.litros_gasolina or 0) }} · Álc: {{
-          '%.2f'|format(total_mes.litros_etanol or 0) }}</div>
+        <div class="label">Combustíveis vendidos (L)</div>
+        <div class="value">
+          {% set total_l = 0 %}
+          {% for c in comb_mes %}
+          {% set total_l = total_l + c.total_litros %}
+          {% endfor %}
+          {{ '%.2f'|format(total_l) }} L
+        </div>
+        <div class="sub">
+          {% for c in comb_mes %}
+          {{ c.combustivel }}: {{ '%.0f'|format(c.total_litros) }}L{% if not loop.last %} | {% endif %}
+          {% endfor %}
+        </div>
       </div>
       <div class="kpi">
         <div class="label">Loja / Itens</div>
@@ -350,11 +358,6 @@
         <div class="value">R$ {{ '%.2f'|format(despesas_mes or 0) }}</div>
         <div class="sub"><a href="/gerencial/despesas?posto_id={{ posto_id }}&mes={{ mes }}"
             style="color:var(--main);text-decoration:none;font-weight:800">Ver lançamentos</a></div>
-      </div>
-      <div class="kpi">
-        <div class="label">Custo combustível (estimado)</div>
-        <div class="value">R$ {{ '%.2f'|format(custo_comb_mes or 0) }}</div>
-        <div class="sub">Baseado no custo médio das NFs</div>
       </div>
       <div class="kpi">
         <div class="label">Receita combustível (estimada)</div>
@@ -386,8 +389,7 @@
               <td>{{ v.turno }}</td>
               <td>{{ v.colaborador_nome or '—' }}</td>
               <td><b>R$ {{ '%.2f'|format(v.total or 0) }}</b></td>
-              <td class="muted">{{ '%.2f'|format((v.litros_gasolina or 0)+(v.litros_etanol or 0)+(v.litros_diesel_s500
-                or 0)+(v.litros_diesel_s10 or 0)) }}</td>
+              <td class="muted">{{ '%.2f'|format(v.total_litros or 0) }} L</td>
             </tr>
             {% endfor %}
             {% if not vendas or vendas|length == 0 %}

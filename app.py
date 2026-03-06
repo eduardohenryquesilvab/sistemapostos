@@ -285,6 +285,19 @@ def init_db() -> None:
             """
         )
 
+        # Nova tabela de Venda Detalhada de Combustíveis (Dinâmico)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS venda_combustiveis (
+                id SERIAL PRIMARY KEY,
+                venda_id INTEGER NOT NULL REFERENCES vendas(id),
+                combustivel TEXT NOT NULL,
+                litros DOUBLE PRECISION NOT NULL DEFAULT 0,
+                preco_unitario DOUBLE PRECISION NOT NULL DEFAULT 0
+            )
+            """
+        )
+
         # Seed 5 postos
         cur.execute("SELECT 1 FROM postos LIMIT 1")
         if not cur.fetchone():
@@ -582,6 +595,20 @@ def init_db() -> None:
         """
     )
 
+    # Nova tabela de Venda Detalhada de Combustíveis (Dinâmico)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS venda_combustiveis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            venda_id INTEGER NOT NULL,
+            combustivel TEXT NOT NULL,
+            litros REAL NOT NULL DEFAULT 0,
+            preco_unitario REAL NOT NULL DEFAULT 0,
+            FOREIGN KEY(venda_id) REFERENCES vendas(id)
+        )
+        """
+    )
+
     # Compatibilidade: garantir colunas em DBs antigos
     if table_exists('vendas'):
         venda_cols = set(colnames('vendas'))
@@ -630,6 +657,33 @@ def init_db() -> None:
                 'INSERT OR IGNORE INTO itens_estoque (posto_id, categoria, nome, unidade, quantidade, estoque_min, custo_unit, preco_venda, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
                 (p['id'], cat, nome, un, qtd, minimo, custo, preco, datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
             )
+
+    # MIGRAÇÃO: Vendas legadas para venda_combustiveis
+    # Verifica se já migrou (se a tabela estiver vazia mas tiver vendas)
+    vendas_count = cur.execute("SELECT COUNT(*) as c FROM vendas").fetchone()['c']
+    venda_comb_count = cur.execute("SELECT COUNT(*) as c FROM venda_combustiveis").fetchone()['c']
+    
+    if vendas_count > 0 and venda_comb_count == 0:
+        vendas_legado = cur.execute("""
+            SELECT id, litros_gasolina, preco_gasolina, litros_etanol, preco_etanol, 
+                   litros_diesel_s500, preco_diesel_s500, litros_diesel_s10, preco_diesel_s10
+            FROM vendas
+        """).fetchall()
+        
+        for v in vendas_legado:
+            for col_l, col_p, nome in [
+                ('litros_gasolina', 'preco_gasolina', 'Gasolina Comum'),
+                ('litros_etanol', 'preco_etanol', 'Álcool'),
+                ('litros_diesel_s500', 'preco_diesel_s500', 'Diesel S500'),
+                ('litros_diesel_s10', 'preco_diesel_s10', 'Diesel S10')
+            ]:
+                litros = float(v[col_l] or 0)
+                preco = float(v[col_p] or 0)
+                if litros > 0:
+                    cur.execute(
+                        "INSERT INTO venda_combustiveis (venda_id, combustivel, litros, preco_unitario) VALUES (?,?,?,?)",
+                        (v['id'], nome, litros, preco)
+                    )
 
     conn.commit()
     conn.close()
@@ -896,22 +950,33 @@ def salvar():
     debito = fnum(d.get('valor_debito'))
     credito = fnum(d.get('valor_credito'))
     valor_produtos = fnum(d.get('valor_produtos'))
-
-    # Litros vendidos
-    litros_gas = fnum(d.get('litros_gas'))
-    litros_alcool = fnum(d.get('litros_alcool'))
-    litros_diesel_s500 = fnum(d.get('litros_diesel_s500'))
-    litros_diesel_s10 = fnum(d.get('litros_diesel_s10'))
-
+    
     # Itens vendidos
     qtd_gas = inum(d.get('qtd_gas'))
     qtd_agua = inum(d.get('qtd_agua'))
 
-    # Preço/L (opcional)
-    preco_gas = fnum(d.get('preco_gas'))
-    preco_alcool = fnum(d.get('preco_alcool'))
-    preco_diesel_s500 = fnum(d.get('preco_diesel_s500'))
-    preco_diesel_s10 = fnum(d.get('preco_diesel_s10'))
+    # 1. Coleta dados dinâmicos de combustíveis primeiro para preencher colunas legadas se existirem
+    comb_data = []
+    prefix_l = "litros_dyn_"
+    prefix_p = "preco_dyn_"
+    
+    # Mapeamento para colunas fixas (legado)
+    legacy_vals = {
+        'Gasolina Comum': {'l': 0.0, 'p': 0.0},
+        'Álcool': {'l': 0.0, 'p': 0.0},
+        'Diesel S500': {'l': 0.0, 'p': 0.0},
+        'Diesel S10': {'l': 0.0, 'p': 0.0}
+    }
+
+    for key, value in d.items():
+        if key.startswith(prefix_l):
+            comb_nome = key[len(prefix_l):]
+            litros_v = fnum(value)
+            preco_v = fnum(d.get(f"{prefix_p}{comb_nome}"))
+            if litros_v > 0:
+                comb_data.append((comb_nome, litros_v, preco_v))
+                if comb_nome in legacy_vals:
+                    legacy_vals[comb_nome] = {'l': litros_v, 'p': preco_v}
 
     conn = get_db_connection()
 
@@ -925,7 +990,8 @@ def salvar():
         ).fetchone()
     colaborador_id = int(colab_row['id']) if colab_row else None
 
-    conn.execute(
+    # Gravar na tabela Vendas (usando legacy_vals para compatibilidade)
+    cur_v = conn.execute(
         '''
         INSERT INTO vendas (
             posto_id, data, turno, colaborador_id,
@@ -936,59 +1002,34 @@ def salvar():
             created_at
         )
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ''',
+        ''' + ("RETURNING id" if getattr(conn, 'is_pg', False) else ""),
         (
-            posto_id,
-            d.get('data_dia'),
-            d.get('turno'),
-            colaborador_id,
+            posto_id, d.get('data_dia'), d.get('turno'), colaborador_id,
             dinheiro, pix, debito, credito,
-            litros_gas, litros_alcool, litros_diesel_s500, litros_diesel_s10,
-            preco_gas, preco_alcool, preco_diesel_s500, preco_diesel_s10,
-            qtd_gas,
-            qtd_agua,
-            valor_produtos,
-            d.get('notas'),
+            legacy_vals['Gasolina Comum']['l'], legacy_vals['Álcool']['l'], legacy_vals['Diesel S500']['l'], legacy_vals['Diesel S10']['l'],
+            legacy_vals['Gasolina Comum']['p'], legacy_vals['Álcool']['p'], legacy_vals['Diesel S500']['p'], legacy_vals['Diesel S10']['p'],
+            qtd_gas, qtd_agua, valor_produtos, d.get('notas'),
             datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         ),
     )
-
-    # Baixa automática do estoque por litros (Dinâmico)
-    def baixa_dynamic(comb: str, litros_venda: float, preco_un: float, v_id: int):
-        if litros_venda and litros_venda > 0:
-            # 1. Atualiza estoque físico
-            conn.execute(
-                'UPDATE estoque SET litros_atuais = MAX(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?',
-                (litros_venda, posto_id, comb),
-            )
-            # 2. Registra na nova tabela detalhada
-            conn.execute(
-                'INSERT INTO venda_combustiveis (venda_id, combustivel, litros, preco_unitario) VALUES (?,?,?,?)',
-                (v_id, comb, litros_venda, preco_un)
-            )
-
-    # Identifica campos dinâmicos no form (litros_XXX e preco_XXX)
-    venda_id_atual = conn.execute("SELECT id FROM vendas WHERE posto_id=? ORDER BY id DESC LIMIT 1", (posto_id,)).fetchone()['id']
     
-    # Para compatibilidade com as colunas fixas antigas (opcional, mas bom manter por enquanto)
-    legacy_map = {
-        'Gasolina Comum': 'litros_gasolina',
-        'Álcool': 'litros_etanol',
-        'Diesel S500': 'litros_diesel_s500',
-        'Diesel S10': 'litros_diesel_s10'
-    }
+    if getattr(conn, 'is_pg', False):
+        venda_id_atual = cur_v.fetchone()['id']
+    else:
+        venda_id_atual = cur_v.lastrowid
 
-    prefix_l = "litros_dyn_"
-    prefix_p = "preco_dyn_"
-
-    for key, value in d.items():
-        if key.startswith(prefix_l):
-            comb_nome = key[len(prefix_l):]
-            litros_v = fnum(value)
-            preco_v = fnum(d.get(f"{prefix_p}{comb_nome}"))
-            
-            if litros_v > 0:
-                baixa_dynamic(comb_nome, litros_v, preco_v, venda_id_atual)
+    # Grava detalhes dinâmicos e baixa estoque
+    for comb_nome, litros_v, preco_v in comb_data:
+        # 1. Baixa estoque
+        conn.execute(
+            'UPDATE estoque SET litros_atuais = MAX(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?',
+            (litros_v, posto_id, comb_nome),
+        )
+        # 2. Registra detalhado
+        conn.execute(
+            'INSERT INTO venda_combustiveis (venda_id, combustivel, litros, preco_unitario) VALUES (?,?,?,?)',
+            (venda_id_atual, comb_nome, litros_v, preco_v)
+        )
 
     # Processamento de Notas (Fiado / Prazo)
     # nota_cliente[] e nota_valor[]
@@ -1033,7 +1074,8 @@ def _gerencial():
     vendas_hoje = conn.execute(
         """
         SELECT v.*, (v.dinheiro+v.pix+v.debito+v.credito+v.valor_produtos) as total,
-               c.nome as colaborador_nome
+               c.nome as colaborador_nome,
+               COALESCE((SELECT SUM(litros) FROM venda_combustiveis WHERE venda_id = v.id), 0) as total_litros
         FROM vendas v
         LEFT JOIN colaboradores c ON c.id = v.colaborador_id
         WHERE v.data = ? AND v.posto_id = ?
@@ -1042,13 +1084,23 @@ def _gerencial():
         (hoje, selected_posto_id),
     ).fetchall()
 
-    total_mes = conn.execute(
+    # Totais do mês dinâmicos (Combustíveis)
+    comb_mes = conn.execute(
+        """
+        SELECT vc.combustivel, SUM(vc.litros) as total_litros, 
+               SUM(vc.litros * vc.preco_unitario) as receita
+        FROM venda_combustiveis vc
+        JOIN vendas v ON v.id = vc.venda_id
+        WHERE v.data LIKE ? AND v.posto_id = ?
+        GROUP BY vc.combustivel
+        """,
+        (f'{mes}%', selected_posto_id),
+    ).fetchall()
+
+    # Totais do mês (Financeiro e Itens - Tabelas originais)
+    total_mes_base = conn.execute(
         """
         SELECT
-            SUM(litros_gasolina) as litros_gasolina,
-            SUM(litros_etanol) as litros_etanol,
-            SUM(litros_diesel_s500) as litros_diesel_s500,
-            SUM(litros_diesel_s10) as litros_diesel_s10,
             SUM(qtd_gas) as gas,
             SUM(qtd_agua) as agua,
             SUM(valor_produtos) as lubs,
@@ -1101,22 +1153,6 @@ def _gerencial():
     ).fetchone()
     despesas_mes = float(despesas_mes_val['total'] or 0) if despesas_mes_val else 0.0
 
-    # Receita estimada de combustíveis (se informado preço por litro no lançamento)
-    receita_comb_val = conn.execute(
-        '''
-        SELECT COALESCE(SUM(
-            litros_gasolina*preco_gasolina +
-            litros_etanol*preco_etanol +
-            litros_diesel_s500*preco_diesel_s500 +
-            litros_diesel_s10*preco_diesel_s10
-        ),0) as total
-        FROM vendas
-        WHERE data LIKE ? AND posto_id = ?
-        ''',
-        (f'{mes}%', selected_posto_id),
-    ).fetchone()
-    receita_comb_mes = float(receita_comb_val['total'] or 0) if receita_comb_val else 0.0
-
     # Custo médio por litro (ponderado) com base nas NFs lançadas
     custos = conn.execute(
         '''
@@ -1130,20 +1166,11 @@ def _gerencial():
     ).fetchall()
     custo_medio = {r['combustivel']: float(r['custo_medio'] or 0) for r in custos}
 
-    litros_g = float(total_mes['litros_gasolina'] or 0) if total_mes else 0.0
-    litros_e = float(total_mes['litros_etanol'] or 0) if total_mes else 0.0
-    litros_500 = float(total_mes['litros_diesel_s500'] or 0) if total_mes else 0.0
-    litros_10 = float(total_mes['litros_diesel_s10'] or 0) if total_mes else 0.0
-
-    custo_comb_mes = (
-        litros_g * custo_medio.get('Gasolina Comum', 0) +
-        litros_e * custo_medio.get('Álcool', 0) +
-        litros_500 * custo_medio.get('Diesel S500', 0) +
-        litros_10 * custo_medio.get('Diesel S10', 0)
-    )
+    receita_comb_mes = sum(float(c['receita'] or 0) for c in comb_mes)
+    custo_comb_mes = sum(float(c['total_litros'] or 0) * custo_medio.get(c['combustivel'], 0) for c in comb_mes)
 
     lucro_bruto_comb_mes = receita_comb_mes - custo_comb_mes
-    financeiro_mes = float(total_mes['financeiro'] or 0) if total_mes else 0.0
+    financeiro_mes = float(total_mes_base['financeiro'] or 0) if total_mes_base else 0.0
     lucro_liquido_estimado = financeiro_mes - despesas_mes - custo_comb_mes
     # Total fiado (pendente)
     total_fiado_result = conn.execute(
@@ -1162,7 +1189,8 @@ def _gerencial():
         hoje=hoje,
         mes=mes,
         vendas=vendas_hoje,
-        total_mes=total_mes,
+        total_mes=total_mes_base,
+        comb_mes=comb_mes,
         produtividade=produtividade,
         tanques=tanques,
         tanques_status=tanques_status,
@@ -1219,6 +1247,19 @@ def _fetch_report_data(conn: sqlite3.Connection, posto_id: int, mes: str) -> dic
         (f'{mes}%', posto_id),
     ).fetchall()
 
+    # Totais do mês dinâmicos (Combustíveis)
+    comb_resumo = conn.execute(
+        """
+        SELECT vc.combustivel, SUM(vc.litros) as total_litros, 
+               SUM(vc.litros * vc.preco_unitario) as receita
+        FROM venda_combustiveis vc
+        JOIN vendas v ON v.id = vc.venda_id
+        WHERE v.data LIKE ? AND v.posto_id = ?
+        GROUP BY vc.combustivel
+        """,
+        (f'{mes}%', posto_id),
+    ).fetchall()
+
     resumo = conn.execute(
         '''
         SELECT
@@ -1226,16 +1267,7 @@ def _fetch_report_data(conn: sqlite3.Connection, posto_id: int, mes: str) -> dic
             COALESCE(SUM(v.dinheiro),0) as dinheiro,
             COALESCE(SUM(v.pix),0) as pix,
             COALESCE(SUM(v.debito),0) as debito,
-            COALESCE(SUM(v.credito),0) as credito,
-
-            COALESCE(SUM(v.litros_gasolina),0) as litros_gasolina,
-            COALESCE(SUM(v.litros_etanol),0) as litros_etanol,
-            COALESCE(SUM(v.litros_diesel_s500),0) as litros_diesel_s500,
-            COALESCE(SUM(v.litros_diesel_s10),0) as litros_diesel_s10,
-
-            COALESCE(SUM(v.litros_gasolina*v.preco_gasolina + v.litros_etanol*v.preco_etanol +
-                         v.litros_diesel_s500*v.preco_diesel_s500 + v.litros_diesel_s10*v.preco_diesel_s10),0) as receita_comb
-
+            COALESCE(SUM(v.credito),0) as credito
         FROM vendas v
         WHERE v.data LIKE ? AND v.posto_id = ?
         ''',
@@ -1247,6 +1279,7 @@ def _fetch_report_data(conn: sqlite3.Connection, posto_id: int, mes: str) -> dic
         (f'{mes}%', posto_id),
     ).fetchone()['total']
 
+    # Custo médio
     custos = conn.execute(
         '''
         SELECT combustivel,
@@ -1259,21 +1292,19 @@ def _fetch_report_data(conn: sqlite3.Connection, posto_id: int, mes: str) -> dic
     ).fetchall()
     custo_medio = {r['combustivel']: float(r['custo_medio'] or 0) for r in custos}
 
-    custo_comb = (
-        float(resumo['litros_gasolina'] or 0) * custo_medio.get('Gasolina Comum', 0) +
-        float(resumo['litros_etanol'] or 0) * custo_medio.get('Álcool', 0) +
-        float(resumo['litros_diesel_s500'] or 0) * custo_medio.get('Diesel S500', 0) +
-        float(resumo['litros_diesel_s10'] or 0) * custo_medio.get('Diesel S10', 0)
-    )
+    receita_comb = sum(float(c['receita'] or 0) for c in comb_resumo)
+    custo_comb = sum(float(c['total_litros'] or 0) * custo_medio.get(c['combustivel'], 0) for c in comb_resumo)
 
     return {
         'vendas': vendas,
         'despesas': despesas,
         'compras': compras,
         'resumo': resumo,
+        'comb_resumo': comb_resumo,
         'total_despesas': float(total_despesas or 0),
         'custo_medio': custo_medio,
         'custo_comb': float(custo_comb or 0),
+        'receita_comb': float(receita_comb or 0),
     }
 
 
@@ -1527,13 +1558,17 @@ def estoque_adm():
             nome_novo = request.form.get('nome_novo', '').strip()
             cap_nova = float(request.form.get('cap_nova') or 0)
             if nome_novo:
-                conn.execute(
-                    'INSERT INTO estoque (posto_id, combustivel, litros_atuais, capacidade_max, active) VALUES (?, ?, 0, ?, 1) ' +
-                    ('ON CONFLICT (posto_id, combustivel) DO UPDATE SET active=1' if getattr(conn, 'is_pg', False) else 'OR IGNORE'),
-                    (selected_posto_id, nome_novo, cap_nova)
-                )
-                if not getattr(conn, 'is_pg', False):
-                     conn.execute('UPDATE estoque SET active=1 WHERE posto_id=? AND combustivel=?', (selected_posto_id, nome_novo))
+                if getattr(conn, 'is_pg', False):
+                    conn.execute(
+                        'INSERT INTO estoque (posto_id, combustivel, litros_atuais, capacidade_max, active) VALUES (?, ?, 0, ?, 1) ON CONFLICT (posto_id, combustivel) DO UPDATE SET active=1',
+                        (selected_posto_id, nome_novo, cap_nova)
+                    )
+                else:
+                    conn.execute(
+                        'INSERT OR IGNORE INTO estoque (posto_id, combustivel, litros_atuais, capacidade_max, active) VALUES (?, ?, 0, ?, 1)',
+                        (selected_posto_id, nome_novo, cap_nova)
+                    )
+                    conn.execute('UPDATE estoque SET active=1 WHERE posto_id=? AND combustivel=?', (selected_posto_id, nome_novo))
         elif action == 'rename_fuel':
             nome_novo = request.form.get('nome_novo', '').strip()
             if nome_novo and combustivel:
