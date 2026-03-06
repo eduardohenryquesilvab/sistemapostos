@@ -1147,7 +1147,7 @@ def _gerencial():
     lucro_liquido_estimado = financeiro_mes - despesas_mes - custo_comb_mes
     # Total fiado (pendente)
     total_fiado_result = conn.execute(
-        'SELECT COALESCE(SUM(valor),0) as total FROM notas_venda WHERE posto_id = ? AND status = "pendente"',
+        "SELECT COALESCE(SUM(valor),0) as total FROM notas_venda WHERE posto_id = ? AND status = 'pendente'",
         (selected_posto_id,),
     ).fetchone()
     total_fiado = float(total_fiado_result['total'] or 0)
@@ -2014,7 +2014,7 @@ def notas():
 
         if action == 'pay' and nota_id:
             conn.execute(
-                'UPDATE notas_venda SET status = "pago", data_pagamento = ? WHERE id = ? AND posto_id = ?',
+                "UPDATE notas_venda SET status = 'pago', data_pagamento = ? WHERE id = ? AND posto_id = ?",
                 (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), nota_id, selected_posto_id),
             )
             conn.commit()
@@ -2027,14 +2027,14 @@ def notas():
         SELECT n.*, c.nome as nome_cliente
         FROM notas_venda n
         JOIN clientes c ON c.id = n.cliente_id
-        WHERE n.posto_id = ? AND n.status = "pendente"
+        WHERE n.posto_id = ? AND n.status = 'pendente'
         ORDER BY n.data DESC
         ''',
         (selected_posto_id,),
     ).fetchall()
 
     total_pendente_result = conn.execute(
-        'SELECT COALESCE(SUM(valor),0) as total FROM notas_venda WHERE posto_id = ? AND status = "pendente"',
+        "SELECT COALESCE(SUM(valor),0) as total FROM notas_venda WHERE posto_id = ? AND status = 'pendente'",
         (selected_posto_id,),
     ).fetchone()
     total_pendente = total_pendente_result['total'] if total_pendente_result else 0
