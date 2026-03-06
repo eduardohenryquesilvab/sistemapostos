@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EC Manager V1.0 | Transferências</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
+
 <body>
   <div class="sidebar">
     <div class="sidebar-brand">
@@ -26,18 +28,23 @@
     <a href="/gerencial/transferencias" class="sidebar-item active"><i class="fas fa-right-left"></i> Transferências</a>
     <a href="/gerencial/despesas" class="sidebar-item"><i class="fas fa-receipt"></i> Despesas</a>
     <a href="/gerencial/equipe" class="sidebar-item"><i class="fas fa-users"></i> Equipe</a>
-    <a href="/gerencial/postos" class="sidebar-item"><i class="fas fa-map-marked-alt"></i> Unidades</a>
+    <a href="/gerencial/clientes" class="sidebar-item"><i class="fas fa-address-book"></i> Clientes</a>
+    <a href="/gerencial/notas" class="sidebar-item"><i class="fas fa-file-invoice-dollar"></i> Notas (Fiado)</a>
+    <a href="/gerencial/postos" class="sidebar-item"><i class="fas fa-map-marked-alt"></i> Unidades (Postos)</a>
     {% if user and user.role == 'owner' %}
-      <a href="/gerencial/usuarios" class="sidebar-item"><i class="fas fa-user-shield"></i> Usuários</a>
+    <a href="/gerencial/usuarios" class="sidebar-item"><i class="fas fa-user-shield"></i> Usuários</a>
     {% endif %}
 
     <div style="margin-top:auto">
-      <a href="/logout" class="sidebar-item" style="color:var(--danger);border-top:1px solid rgba(255,255,255,.08);border-bottom:none"><i class="fas fa-sign-out-alt"></i> Sair</a>
+      <a href="/logout" class="sidebar-item"
+        style="color:var(--danger);border-top:1px solid rgba(255,255,255,.08);border-bottom:none"><i
+          class="fas fa-sign-out-alt"></i> Sair</a>
     </div>
   </div>
 
   <div class="content">
-    <div class="topbar" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+    <div class="topbar"
+      style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
       <h1 style="margin:0;color:var(--dark);font-size:20px">Transferências entre unidades</h1>
       <span class="badge"><i class="fa-solid fa-shuffle"></i> Controle interno</span>
     </div>
@@ -63,14 +70,14 @@
           <label>Origem</label>
           <select name="origem_posto_id" required>
             {% for p in postos %}
-              <option value="{{ p.id }}">{{ p.nome_posto }}</option>
+            <option value="{{ p.id }}">{{ p.nome_posto }}</option>
             {% endfor %}
           </select>
 
           <label>Destino</label>
           <select name="destino_posto_id" required>
             {% for p in postos %}
-              <option value="{{ p.id }}">{{ p.nome_posto }}</option>
+            <option value="{{ p.id }}">{{ p.nome_posto }}</option>
             {% endfor %}
           </select>
 
@@ -78,7 +85,7 @@
             <label>Produto (combustível)</label>
             <select name="produto">
               {% for c in combustiveis %}
-                <option value="{{ c.nome }}">{{ c.nome }}</option>
+              <option value="{{ c.nome }}">{{ c.nome }}</option>
               {% endfor %}
             </select>
           </div>
@@ -87,7 +94,7 @@
             <label>Produto (item)</label>
             <select name="produto">
               {% for i in itens_distintos %}
-                <option value="{{ i.nome }}">{{ i.nome }}</option>
+              <option value="{{ i.nome }}">{{ i.nome }}</option>
               {% endfor %}
             </select>
           </div>
@@ -126,9 +133,9 @@
                 <td>{{ t.data|format_data }}</td>
                 <td>
                   {% if t.tipo == 'combustivel' %}
-                    <span class="badge"><i class="fa-solid fa-gas-pump"></i> Comb.</span>
+                  <span class="badge"><i class="fa-solid fa-gas-pump"></i> Comb.</span>
                   {% else %}
-                    <span class="badge"><i class="fa-solid fa-box"></i> Item</span>
+                  <span class="badge"><i class="fa-solid fa-box"></i> Item</span>
                   {% endif %}
                 </td>
                 <td><strong>{{ t.produto }}</strong></td>
@@ -145,12 +152,13 @@
 
   </div>
 
-<script>
-function toggleTipo(){
-  const tipo = document.getElementById('tipo').value;
-  document.getElementById('boxComb').style.display = (tipo === 'combustivel') ? 'block' : 'none';
-  document.getElementById('boxItem').style.display = (tipo === 'item') ? 'block' : 'none';
-}
-</script>
+  <script>
+    function toggleTipo() {
+      const tipo = document.getElementById('tipo').value;
+      document.getElementById('boxComb').style.display = (tipo === 'combustivel') ? 'block' : 'none';
+      document.getElementById('boxItem').style.display = (tipo === 'item') ? 'block' : 'none';
+    }
+  </script>
 </body>
+
 </html>
