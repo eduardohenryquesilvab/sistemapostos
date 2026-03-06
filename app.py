@@ -256,6 +256,34 @@ def init_db() -> None:
             )
             """
         )
+        # Clientes
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS clientes (
+                id SERIAL PRIMARY KEY,
+                posto_id INTEGER NOT NULL REFERENCES postos(id),
+                nome TEXT NOT NULL,
+                documento TEXT,
+                limite_credito DOUBLE PRECISION NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+        # Notas de Venda (Fiado)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notas_venda (
+                id SERIAL PRIMARY KEY,
+                venda_id INTEGER REFERENCES vendas(id),
+                cliente_id INTEGER NOT NULL REFERENCES clientes(id),
+                posto_id INTEGER NOT NULL REFERENCES postos(id),
+                data TEXT NOT NULL,
+                valor DOUBLE PRECISION NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pendente', -- pendente | pago
+                data_pagamento TEXT
+            )
+            """
+        )
 
         # Seed 5 postos
         cur.execute("SELECT 1 FROM postos LIMIT 1")
@@ -516,6 +544,40 @@ def init_db() -> None:
             FOREIGN KEY(origem_posto_id) REFERENCES postos(id),
             FOREIGN KEY(destino_posto_id) REFERENCES postos(id),
             FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
+    # ------------------------
+    # Notas de Clientes (Fiado)
+    # ------------------------
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS clientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            posto_id INTEGER NOT NULL,
+            nome TEXT NOT NULL,
+            documento TEXT,
+            limite_credito REAL NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY(posto_id) REFERENCES postos(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notas_venda (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            venda_id INTEGER,
+            cliente_id INTEGER NOT NULL,
+            posto_id INTEGER NOT NULL,
+            data TEXT NOT NULL,
+            valor REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pendente', -- pendente | pago
+            data_pagamento TEXT,
+            FOREIGN KEY(venda_id) REFERENCES vendas(id),
+            FOREIGN KEY(cliente_id) REFERENCES clientes(id),
+            FOREIGN KEY(posto_id) REFERENCES postos(id)
         )
         """
     )
@@ -790,12 +852,19 @@ def lancamento():
         'SELECT * FROM estoque WHERE posto_id = ? AND active = 1 ORDER BY combustivel',
         (posto_id,),
     ).fetchall()
+
+    # Busca clientes ativos para o posto
+    clientes = conn.execute(
+        'SELECT * FROM clientes WHERE active = 1 AND posto_id = ? ORDER BY nome',
+        (posto_id,),
+    ).fetchall()
     conn.close()
 
     return render_template(
         'index.html',
         colaboradores=colabs,
         combustiveis=combustiveis,
+        clientes=clientes,
         posto=posto,
         posto_id=posto_id,
         data_hoje=datetime.now().strftime('%Y-%m-%d'),
@@ -920,6 +989,19 @@ def salvar():
             
             if litros_v > 0:
                 baixa_dynamic(comb_nome, litros_v, preco_v, venda_id_atual)
+
+    # Processamento de Notas (Fiado / Prazo)
+    # nota_cliente[] e nota_valor[]
+    cliente_ids = d.getlist('nota_cliente[]')
+    cliente_valores = d.getlist('nota_valor[]')
+    
+    for c_id, c_val in zip(cliente_ids, cliente_valores):
+        val = fnum(c_val)
+        if c_id and val > 0:
+            conn.execute(
+                'INSERT INTO notas_venda (venda_id, cliente_id, posto_id, data, valor, status) VALUES (?,?,?,?,?,?)',
+                (venda_id_atual, int(c_id), posto_id, d.get('data_dia'), val, 'pendente')
+            )
 
     baixa_item('Água', qtd_agua)
     baixa_item('Gás', qtd_gas)
@@ -1063,6 +1145,13 @@ def _gerencial():
     lucro_bruto_comb_mes = receita_comb_mes - custo_comb_mes
     financeiro_mes = float(total_mes['financeiro'] or 0) if total_mes else 0.0
     lucro_liquido_estimado = financeiro_mes - despesas_mes - custo_comb_mes
+    # Total fiado (pendente)
+    total_fiado_result = conn.execute(
+        'SELECT COALESCE(SUM(valor),0) as total FROM notas_venda WHERE posto_id = ? AND status = "pendente"',
+        (selected_posto_id,),
+    ).fetchone()
+    total_fiado = float(total_fiado_result['total'] or 0)
+
     conn.close()
 
     return render_template(
@@ -1083,6 +1172,7 @@ def _gerencial():
         custo_comb_mes=custo_comb_mes,
         lucro_bruto_comb_mes=lucro_bruto_comb_mes,
         lucro_liquido_estimado=lucro_liquido_estimado,
+        total_fiado=total_fiado,
     )
 
 
@@ -1855,6 +1945,104 @@ def equipe():
     conn.close()
 
     return render_template('equipe.html', colaboradores=colabs, postos=postos, posto_id=selected_posto_id, user=u)
+
+
+# ------------------------
+# Clientes (Gerencial)
+# ------------------------
+
+@app.route('/gerencial/clientes', methods=['GET', 'POST'])
+@login_required
+def clientes():
+    u = current_user()
+    selected_posto_id = resolve_selected_posto(u)
+
+    conn = get_db_connection()
+    if request.method == 'POST':
+        action = request.form.get('action') or 'create'
+        cliente_id = request.form.get('cliente_id')
+        nome = (request.form.get('nome') or '').strip()
+        documento = (request.form.get('documento') or '').strip()
+        limite = float(request.form.get('limite_credito') or 0)
+
+        if action == 'create' and nome:
+            conn.execute(
+                'INSERT INTO clientes (posto_id, nome, documento, limite_credito) VALUES (?,?,?,?)',
+                (selected_posto_id, nome, documento, limite),
+            )
+            conn.commit()
+        elif action == 'update' and cliente_id and nome:
+            conn.execute(
+                'UPDATE clientes SET nome = ?, documento = ?, limite_credito = ? WHERE id = ? AND posto_id = ?',
+                (nome, documento, limite, cliente_id, selected_posto_id),
+            )
+            conn.commit()
+        elif action == 'delete' and cliente_id:
+            conn.execute(
+                'UPDATE clientes SET active = 0 WHERE id = ? AND posto_id = ?',
+                (cliente_id, selected_posto_id),
+            )
+            conn.commit()
+
+        conn.close()
+        return redirect(url_for('clientes', posto_id=selected_posto_id))
+
+    lista = conn.execute(
+        'SELECT * FROM clientes WHERE posto_id = ? AND active = 1 ORDER BY nome',
+        (selected_posto_id,),
+    ).fetchall()
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
+    conn.close()
+
+    return render_template('clientes.html', clientes=lista, postos=postos, posto_id=selected_posto_id, user=u)
+
+
+# ------------------------
+# Controle de Notas (Fiado)
+# ------------------------
+
+@app.route('/gerencial/notas', methods=['GET', 'POST'])
+@login_required
+def notas():
+    u = current_user()
+    selected_posto_id = resolve_selected_posto(u)
+
+    conn = get_db_connection()
+    if request.method == 'POST':
+        action = request.form.get('action')
+        nota_id = request.form.get('nota_id')
+
+        if action == 'pay' and nota_id:
+            conn.execute(
+                'UPDATE notas_venda SET status = "pago", data_pagamento = ? WHERE id = ? AND posto_id = ?',
+                (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), nota_id, selected_posto_id),
+            )
+            conn.commit()
+
+        conn.close()
+        return redirect(url_for('notas', posto_id=selected_posto_id))
+
+    notas_lista = conn.execute(
+        '''
+        SELECT n.*, c.nome as nome_cliente
+        FROM notas_venda n
+        JOIN clientes c ON c.id = n.cliente_id
+        WHERE n.posto_id = ? AND n.status = "pendente"
+        ORDER BY n.data DESC
+        ''',
+        (selected_posto_id,),
+    ).fetchall()
+
+    total_pendente_result = conn.execute(
+        'SELECT COALESCE(SUM(valor),0) as total FROM notas_venda WHERE posto_id = ? AND status = "pendente"',
+        (selected_posto_id,),
+    ).fetchone()
+    total_pendente = total_pendente_result['total'] if total_pendente_result else 0
+
+    postos = conn.execute('SELECT * FROM postos WHERE active = 1 ORDER BY nome_posto').fetchall()
+    conn.close()
+
+    return render_template('notas.html', notas=notas_lista, total_pendente=float(total_pendente), postos=postos, posto_id=selected_posto_id, user=u)
 
 
 # ------------------------

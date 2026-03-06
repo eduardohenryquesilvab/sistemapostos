@@ -81,6 +81,32 @@
         <input type="number" step="0.01" name="valor_produtos"
           placeholder="Total outros produtos (Lubrificantes, etc) R$">
 
+        <div class="section-title"><i class="fa-solid fa-address-book"></i> Venda a Prazo (Notas)</div>
+        <div id="notas-container">
+          <div class="grid-2 nota-row" style="margin-bottom: 10px; gap: 8px;">
+            <select name="nota_cliente[]" style="width: 100%;">
+              <option value="">Selecione o Cliente...</option>
+              {% for cli in clientes %}
+              <option value="{{ cli.id }}">{{ cli.nome }}</option>
+              {% endfor %}
+            </select>
+            <input type="number" step="0.01" name="nota_valor[]" placeholder="Valor R$">
+          </div>
+        </div>
+        <button type="button" onclick="addNotaRow()" class="btn secondary sm" style="width: auto; margin-bottom: 15px;">
+          <i class="fa-solid fa-plus"></i> Adicionar Nota
+        </button>
+
+        <script>
+          function addNotaRow() {
+            const container = document.getElementById('notas-container');
+            const row = container.children[0].cloneNode(true);
+            row.querySelectorAll('input').forEach(i => i.value = '');
+            row.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+            container.appendChild(row);
+          }
+        </script>
+
         <div>
           <label>Notas/Observações</label>
           <textarea name="notas" rows="2" placeholder="Ocorrências no turno..."></textarea>

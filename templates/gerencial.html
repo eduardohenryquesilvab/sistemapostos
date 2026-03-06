@@ -241,6 +241,10 @@
     <a href="/gerencial/despesas?posto_id={{ posto_id }}" class="sidebar-item"><i class="fas fa-receipt"></i>
       Despesas</a>
     <a href="/gerencial/equipe?posto_id={{ posto_id }}" class="sidebar-item"><i class="fas fa-users"></i> Equipe</a>
+    <a href="/gerencial/clientes?posto_id={{ posto_id }}" class="sidebar-item"><i class="fas fa-address-book"></i>
+      Clientes</a>
+    <a href="/gerencial/notas?posto_id={{ posto_id }}" class="sidebar-item"><i class="fas fa-file-invoice-dollar"></i>
+      Notas (Fiado)</a>
     <a href="/gerencial/postos" class="sidebar-item"><i class="fas fa-map-marked-alt"></i> Unidades (Postos)</a>
     {% if user and user.role == 'owner' %}
     <a href="/gerencial/usuarios" class="sidebar-item"><i class="fas fa-user-shield"></i> Usuários</a>
@@ -310,6 +314,11 @@
     {% endif %}
 
     <div class="grid">
+      <div class="kpi" style="border-left: 5px solid var(--danger);">
+        <div class="label">Fiado em Aberto</div>
+        <div class="value" style="color: var(--danger);">R$ {{ '%.2f'|format(total_fiado) }}</div>
+        <div class="sub">Total de notas pendentes</div>
+      </div>
       <div class="kpi">
         <div class="label">Financeiro do mês</div>
         <div class="value">R$ {{ '%.2f'|format(total_mes.financeiro or 0) }}</div>
