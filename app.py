@@ -805,7 +805,7 @@ def calc_tank_days_left(conn, posto_id: int, combustivel: str, litros_atuais: fl
 
 def get_tanques_status(conn, posto_id: int, alerta_pct: float = 0.20):
     tanques = conn.execute(
-        'SELECT * FROM estoque WHERE posto_id = ? ORDER BY combustivel',
+        'SELECT * FROM estoque WHERE posto_id = ? AND active = 1 ORDER BY combustivel',
         (posto_id,),
     ).fetchall()
 
@@ -1018,13 +1018,32 @@ def salvar():
     else:
         venda_id_atual = cur_v.lastrowid
 
+    def baixa_item(item_nome, qtd):
+        if qtd <= 0:
+            return
+        # Busca o item para este posto
+        row = conn.execute('SELECT id, custo_unit, preco_venda FROM itens_estoque WHERE posto_id = ? AND nome = ? AND active = 1', (posto_id, item_nome)).fetchone()
+        if not row:
+            return
+        
+        item_id = row['id']
+        # Baixa estoque usando GREATEST para Postgres e MAX para SQLite
+        sql_update = 'UPDATE itens_estoque SET quantidade = GREATEST(quantidade - ?, 0) WHERE id = ?' if getattr(conn, 'is_pg', False) else \
+                     'UPDATE itens_estoque SET quantidade = MAX(quantidade - ?, 0) WHERE id = ?'
+        conn.execute(sql_update, (qtd, item_id))
+        
+        # Registra movimentação
+        conn.execute(
+            'INSERT INTO itens_mov (data, posto_id, item_id, tipo, quantidade, custo_unit, preco_venda, ref, user_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+            (d.get('data_dia'), posto_id, item_id, 'saida', float(qtd), float(row['custo_unit'] or 0), float(row['preco_venda'] or 0), 'venda', None, datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+        )
+
     # Grava detalhes dinâmicos e baixa estoque
     for comb_nome, litros_v, preco_v in comb_data:
         # 1. Baixa estoque
-        conn.execute(
-            'UPDATE estoque SET litros_atuais = MAX(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?',
-            (litros_v, posto_id, comb_nome),
-        )
+        sql_estoque = 'UPDATE estoque SET litros_atuais = GREATEST(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?' if getattr(conn, 'is_pg', False) else \
+                      'UPDATE estoque SET litros_atuais = MAX(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?'
+        conn.execute(sql_estoque, (litros_v, posto_id, comb_nome))
         # 2. Registra detalhado
         conn.execute(
             'INSERT INTO venda_combustiveis (venda_id, combustivel, litros, preco_unitario) VALUES (?,?,?,?)',
@@ -1129,7 +1148,7 @@ def _gerencial():
     ).fetchall()
 
     tanques = conn.execute(
-        'SELECT * FROM estoque WHERE posto_id = ? ORDER BY combustivel',
+        'SELECT * FROM estoque WHERE posto_id = ? AND active = 1 ORDER BY combustivel',
         (selected_posto_id,),
     ).fetchall()
 
@@ -1648,7 +1667,7 @@ def combustiveis_nf():
         return redirect(url_for('combustiveis_nf', posto_id=selected_posto_id))
 
     tanques = conn.execute(
-        'SELECT * FROM estoque WHERE posto_id = ? ORDER BY combustivel',
+        'SELECT * FROM estoque WHERE posto_id = ? AND active = 1 ORDER BY combustivel',
         (selected_posto_id,),
     ).fetchall()
 
@@ -1816,7 +1835,9 @@ def itens():
                         conn.execute('UPDATE itens_estoque SET quantidade = quantidade + ? WHERE id = ?', (qtd, item_id))
                         mov_tipo = 'entrada'
                     elif tipo == 'saida':
-                        conn.execute('UPDATE itens_estoque SET quantidade = MAX(quantidade - ?, 0) WHERE id = ?', (qtd, item_id))
+                        sql_saida = 'UPDATE itens_estoque SET quantidade = GREATEST(quantidade - ?, 0) WHERE id = ?' if getattr(conn, 'is_pg', False) else \
+                                    'UPDATE itens_estoque SET quantidade = MAX(quantidade - ?, 0) WHERE id = ?'
+                        conn.execute(sql_saida, (qtd, item_id))
                         mov_tipo = 'saida'
                     else:
                         conn.execute('UPDATE itens_estoque SET quantidade = ? WHERE id = ?', (qtd, item_id))
@@ -1885,13 +1906,17 @@ def transferencias():
 
         if origem and destino and origem != destino and produto and quantidade > 0:
             if tipo == 'combustivel':
-                conn.execute('UPDATE estoque SET litros_atuais = MAX(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?', (quantidade, origem, produto))
+                sql_transf_out = 'UPDATE estoque SET litros_atuais = GREATEST(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?' if getattr(conn, 'is_pg', False) else \
+                                 'UPDATE estoque SET litros_atuais = MAX(litros_atuais - ?, 0) WHERE posto_id = ? AND combustivel = ?'
+                conn.execute(sql_transf_out, (quantidade, origem, produto))
                 conn.execute('UPDATE estoque SET litros_atuais = litros_atuais + ? WHERE posto_id = ? AND combustivel = ?', (quantidade, destino, produto))
                 item_origem = None
             else:
                 item_origem = conn.execute('SELECT id, custo_unit, preco_venda FROM itens_estoque WHERE posto_id = ? AND nome = ? AND active = 1', (origem, produto)).fetchone()
                 if item_origem:
-                    conn.execute('UPDATE itens_estoque SET quantidade = MAX(quantidade - ?, 0) WHERE id = ?', (quantidade, item_origem['id']))
+                    sql_transf_item_out = 'UPDATE itens_estoque SET quantidade = GREATEST(quantidade - ?, 0) WHERE id = ?' if getattr(conn, 'is_pg', False) else \
+                                          'UPDATE itens_estoque SET quantidade = MAX(quantidade - ?, 0) WHERE id = ?'
+                    conn.execute(sql_transf_item_out, (quantidade, item_origem['id']))
                     conn.execute('INSERT INTO itens_mov (data, posto_id, item_id, tipo, quantidade, custo_unit, preco_venda, ref, user_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
                                 (data, origem, item_origem['id'], 'transferencia_out', quantidade, float(item_origem['custo_unit'] or 0), float(item_origem['preco_venda'] or 0), f'transf:{destino}', int(u['id']) if u else None, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
