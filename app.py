@@ -1072,6 +1072,61 @@ def salvar():
     return "<script>alert('Sucesso!'); window.location.href='/lancamento';</script>"
 
 
+@app.route('/gerencial/venda/excluir/<int:venda_id>')
+@login_required
+def excluir_venda(venda_id):
+    u = current_user()
+    conn = get_db_connection()
+    venda = conn.execute('SELECT * FROM vendas WHERE id = ?', (venda_id,)).fetchone()
+    
+    if not venda:
+        conn.close()
+        return "<script>alert('Venda não encontrada.'); window.history.back();</script>"
+    
+    posto_id = venda['posto_id']
+    
+    # Verificação de permissão (apenas owner ou manager do posto)
+    if u['role'] != 'owner' and int(u['posto_id']) != posto_id:
+        conn.close()
+        abort(403)
+
+    # 1. Estorno de Combustíveis
+    detalhes = conn.execute('SELECT * FROM venda_combustiveis WHERE venda_id = ?', (venda_id,)).fetchall()
+    for d in detalhes:
+        conn.execute(
+            'UPDATE estoque SET litros_atuais = litros_atuais + ? WHERE posto_id = ? AND combustivel = ?',
+            (d['litros'], posto_id, d['combustivel'])
+        )
+    
+    # 2. Estorno de Itens (Água e Gás)
+    if venda['qtd_agua'] > 0:
+        row_agua = conn.execute('SELECT id FROM itens_estoque WHERE posto_id = ? AND nome = ? AND active = 1', (posto_id, 'Água')).fetchone()
+        if row_agua:
+            conn.execute('UPDATE itens_estoque SET quantidade = quantidade + ? WHERE id = ?', (venda['qtd_agua'], row_agua['id']))
+            conn.execute(
+                'INSERT INTO itens_mov (data, posto_id, item_id, tipo, quantidade, ref, created_at) VALUES (?,?,?,?,?,?,?)',
+                (datetime.now().strftime('%Y-%m-%d'), posto_id, row_agua['id'], 'entrada', float(venda['qtd_agua']), f'estorno_venda:{venda_id}', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            )
+
+    if venda['qtd_gas'] > 0:
+        row_gas = conn.execute('SELECT id FROM itens_estoque WHERE posto_id = ? AND nome = ? AND active = 1', (posto_id, 'Gás')).fetchone()
+        if row_gas:
+            conn.execute('UPDATE itens_estoque SET quantidade = quantidade + ? WHERE id = ?', (venda['qtd_gas'], row_gas['id']))
+            conn.execute(
+                'INSERT INTO itens_mov (data, posto_id, item_id, tipo, quantidade, ref, created_at) VALUES (?,?,?,?,?,?,?)',
+                (datetime.now().strftime('%Y-%m-%d'), posto_id, row_gas['id'], 'entrada', float(venda['qtd_gas']), f'estorno_venda:{venda_id}', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            )
+
+    # 3. Limpeza de tabelas relacionadas
+    conn.execute('DELETE FROM venda_combustiveis WHERE venda_id = ?', (venda_id,))
+    conn.execute('DELETE FROM notas_venda WHERE venda_id = ?', (venda_id,))
+    conn.execute('DELETE FROM vendas WHERE id = ?', (venda_id,))
+    
+    conn.commit()
+    conn.close()
+    return "<script>alert('Venda excluída e estoque estornado com sucesso.'); window.location.href='/gerencial';</script>"
+
+
 @app.route('/gerencial')
 @login_required
 def gerencial():

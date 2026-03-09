@@ -381,6 +381,7 @@
               <th>Frentista</th>
               <th>Total</th>
               <th>Comb. (L)</th>
+              <th style="width:50px">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -390,11 +391,19 @@
               <td>{{ v.colaborador_nome or '—' }}</td>
               <td><b>R$ {{ '%.2f'|format(v.total or 0) }}</b></td>
               <td class="muted">{{ '%.2f'|format(v.total_litros or 0) }} L</td>
+              <td>
+                <a href="/gerencial/venda/excluir/{{ v.id }}" 
+                   class="btn" 
+                   style="background:var(--danger); padding: 5px 8px; font-size: 12px;"
+                   onclick="return confirm('Tem certeza que deseja excluir esta venda? O estoque será estornado.')">
+                  <i class="fas fa-trash"></i>
+                </a>
+              </td>
             </tr>
             {% endfor %}
             {% if not vendas or vendas|length == 0 %}
             <tr>
-              <td colspan="4" class="muted">Sem lançamentos hoje.</td>
+              <td colspan="5" class="muted">Sem lançamentos hoje.</td>
             </tr>
             {% endif %}
           </tbody>
